@@ -44,7 +44,11 @@ const (
 	ErrCloseRealm = URI("wamp.error.close_realm")
 
 	// A Peer acknowledges ending of a session - used as a GOOBYE reply reason.
-	ErrGoodbyeAndOut = URI("wamp.error.goodbye_and_out")
+	//ErrGoodbyeAndOut = URI("wamp.error.goodbye_and_out")
+	ErrGoodbyeAndOut = URI("wamp.close.normal")
+
+
+
 
 	// --- Authorization ---
 
@@ -66,6 +70,8 @@ const (
 	// but the Role configured does not exists - hence there is some
 	// misconfiguration in the Router.
 	ErrNoSuchRole = URI("wamp.error.no_such_role")
+
+	ErrSecondLogin = URI("wamp.error.second_login")
 )
 
 const (

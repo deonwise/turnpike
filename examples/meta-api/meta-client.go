@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"gopkg.in/jcelliott/turnpike.v2"
+	"turnpike.v2"
 )
 
 func main() {

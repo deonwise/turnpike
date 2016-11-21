@@ -137,22 +137,34 @@ func (c *Client) joinRealmCRA(realm string, details map[string]interface{}) (map
 		return nil, err
 	} else if challenge, ok := msg.(*Challenge); !ok {
 		c.Send(abortUnexpectedMsg)
+		time.Sleep(2000 * time.Millisecond)
 		c.Peer.Close()
 		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, CHALLENGE))
 	} else if authFunc, ok := c.Auth[challenge.AuthMethod]; !ok {
+		log.Println("error challange")
 		c.Send(abortNoAuthHandler)
+		time.Sleep(2000 * time.Millisecond)
 		c.Peer.Close()
 		close(c.acts)
+
+
 		return nil, fmt.Errorf("no auth handler for method: %s", challenge.AuthMethod)
 	} else if signature, authDetails, err := authFunc(details, challenge.Extra); err != nil {
+		log.Println("error auth")
 		c.Send(abortAuthFailure)
+		time.Sleep(2000 * time.Millisecond)
 		c.Peer.Close()
 		close(c.acts)
+
 		return nil, err
 	} else if err := c.Send(&Authenticate{Signature: signature, Extra: authDetails}); err != nil {
+		log.Println("error auth2")
+		c.Send(abortAuthFailure)
+		time.Sleep(2000 * time.Millisecond)
 		c.Peer.Close()
 		close(c.acts)
+
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
@@ -161,8 +173,10 @@ func (c *Client) joinRealmCRA(realm string, details map[string]interface{}) (map
 		return nil, err
 	} else if welcome, ok := msg.(*Welcome); !ok {
 		c.Send(abortUnexpectedMsg)
+		time.Sleep(2000 * time.Millisecond)
 		c.Peer.Close()
 		close(c.acts)
+
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, WELCOME))
 	} else {
 		go c.Receive()
@@ -585,7 +599,7 @@ func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]int
 }
 
 // Call calls a procedure given a URI.
-func (c *Client) Call(procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
+func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]interface{}, options map[string]interface{}) (*Result, error) {
 	id := NewID()
 	c.registerListener(id)
 

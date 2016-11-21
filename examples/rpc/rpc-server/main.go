@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"gopkg.in/jcelliott/turnpike.v2"
+	"turnpike.v2"
 )
 
 var client *turnpike.Client
 
 func main() {
-	turnpike.Debug()
+	//turnpike.Debug()
 	s := turnpike.NewBasicWebsocketServer("turnpike.examples")
 	server := &http.Server{
 		Handler: s,

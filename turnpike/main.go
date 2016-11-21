@@ -17,11 +17,6 @@ var (
 	debug bool
 )
 
-func init() {
-	flag.StringVar(&realm, "realm", "realm1", "realm name")
-	flag.IntVar(&port, "port", 8000, "port to run on")
-	flag.BoolVar(&debug, "debug", false, "enable debug logging")
-}
 
 func main() {
 	flag.Parse()

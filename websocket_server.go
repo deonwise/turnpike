@@ -52,6 +52,7 @@ func NewWebsocketServer(realms map[string]Realm) (*WebsocketServer, error) {
 		}
 	}
 	s := newWebsocketServer(r)
+
 	return s, nil
 }
 
@@ -67,7 +68,12 @@ func newWebsocketServer(r Router) *WebsocketServer {
 		Router:    r,
 		protocols: make(map[string]protocol),
 	}
-	s.Upgrader = &websocket.Upgrader{}
+	s.Upgrader = &websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},}
 	s.RegisterProtocol(jsonWebsocketProtocol, websocket.TextMessage, new(JSONSerializer))
 	s.RegisterProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage, new(MessagePackSerializer))
 	return s
@@ -102,17 +108,18 @@ func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interf
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
-	// TODO: subprotocol?
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.handleWebsocket(conn)
+	s.handleWebsocket(conn,r)
 }
 
-func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
+func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn,  r *http.Request) {
+	log.Println("handleWebsocket")
+	log.Println(r)
 	var serializer Serializer
 	var payloadType int
 	if proto, ok := s.protocols[conn.Subprotocol()]; ok {
@@ -122,6 +129,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 		// TODO: this will not currently ever be hit because
 		//       gorilla/websocket will reject the conncetion
 		//       if the subprotocol isn't registered
+		log.Println("Subprotocol",conn.Subprotocol())
 		switch conn.Subprotocol() {
 		case jsonWebsocketProtocol:
 			serializer = new(JSONSerializer)
@@ -130,8 +138,8 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 			serializer = new(MessagePackSerializer)
 			payloadType = websocket.BinaryMessage
 		default:
-			conn.Close()
-			return
+			serializer = new(JSONSerializer)
+			payloadType = websocket.TextMessage
 		}
 	}
 
@@ -139,9 +147,11 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 		conn:        conn,
 		serializer:  serializer,
 		messages:    make(chan Message, 10),
+		send: 	     make(chan WSMessage, 10),
 		payloadType: payloadType,
 	}
 	go peer.run()
+	go peer.writePump()
 
-	logErr(s.Router.Accept(&peer))
+	logErr(s.Router.Accept(&peer,r))
 }

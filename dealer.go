@@ -9,7 +9,7 @@ type Dealer interface {
 	// Unregister a procedure on an endpoint
 	Unregister(Sender, *Unregister)
 	// Call a procedure on an endpoint
-	Call(Sender, *Call)
+	Call(Session, *Call)
 	// Return the result of a procedure call
 	Yield(Sender, *Yield)
 	// Handle an ERROR message from an invocation
@@ -101,7 +101,9 @@ func (d *defaultDealer) Unregister(callee Sender, msg *Unregister) {
 	}
 }
 
-func (d *defaultDealer) Call(caller Sender, msg *Call) {
+func (d *defaultDealer) Call(sess Session, msg *Call) {
+	log.Println(sess)
+	caller := sess.Peer;
 	d.lock.Lock()
 	if reg, ok := d.registrations[msg.Procedure]; !ok {
 		d.lock.Unlock()
@@ -132,7 +134,7 @@ func (d *defaultDealer) Call(caller Sender, msg *Call) {
 			rproc.Endpoint.Send(&Invocation{
 				Request:      invocationID,
 				Registration: reg,
-				Details:      map[string]interface{}{},
+				Details:      sess.Details,
 				Arguments:    msg.Arguments,
 				ArgumentsKw:  msg.ArgumentsKw,
 			})

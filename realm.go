@@ -70,6 +70,9 @@ func (r Realm) Close() {
 	close(r.acts)
 }
 
+
+
+
 func (r *Realm) init() {
 	r.clients = make(map[ID]Session)
 	r.acts = make(chan func())
@@ -143,6 +146,7 @@ func (r *Realm) handleSession(sess Session) {
 			}
 		case reason := <-sess.kill:
 			logErr(sess.Send(&Goodbye{Reason: reason, Details: make(map[string]interface{})}))
+			time.Sleep(2000* time.Millisecond)
 			log.Printf("kill session %s: %v", sess, reason)
 			// TODO: wait for client Goodbye?
 			return
@@ -151,12 +155,23 @@ func (r *Realm) handleSession(sess Session) {
 		log.Printf("[%s] %s: %+v", sess, msg.MessageType(), msg)
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &Error{Type: msg.MessageType()}
+
 			if err != nil {
 				errMsg.Error = ErrAuthorizationFailed
 				log.Printf("[%s] authorization failed: %v", sess, err)
 			} else {
 				errMsg.Error = ErrNotAuthorized
 				log.Printf("[%s] %s UNAUTHORIZED", sess, msg.MessageType())
+			}
+
+			switch msg := msg.(type) {
+
+			case *Subscribe:
+				errMsg.Request = msg.Request
+			case *Call:
+				errMsg.Request = msg.Request
+			default:
+
 			}
 			logErr(sess.Send(errMsg))
 			continue
@@ -167,7 +182,9 @@ func (r *Realm) handleSession(sess Session) {
 		switch msg := msg.(type) {
 		case *Goodbye:
 			logErr(sess.Send(&Goodbye{Reason: ErrGoodbyeAndOut, Details: make(map[string]interface{})}))
+			time.Sleep(2000* time.Millisecond)
 			log.Printf("[%s] leaving: %v", sess, msg.Reason)
+			time.Sleep(2000* time.Millisecond)
 			return
 
 		// Broker messages
@@ -184,7 +201,7 @@ func (r *Realm) handleSession(sess Session) {
 		case *Unregister:
 			r.Dealer.Unregister(sess.Peer, msg)
 		case *Call:
-			r.Dealer.Call(sess.Peer, msg)
+			r.Dealer.Call(sess, msg)
 		case *Yield:
 			r.Dealer.Yield(sess.Peer, msg)
 

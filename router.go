@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"net/http"
+	"strings"
 )
 
 var defaultWelcomeDetails = map[string]interface{}{
@@ -34,12 +36,13 @@ func (e AuthenticationError) Error() string {
 
 // A Router handles new Peers and routes requests to the requested Realm.
 type Router interface {
-	Accept(Peer) error
+	Accept(Peer, *http.Request) error
 	Close() error
 	RegisterRealm(URI, Realm) error
 	GetLocalPeer(URI, map[string]interface{}) (Peer, error)
 	AddSessionOpenCallback(func(uint, string))
 	AddSessionCloseCallback(func(uint, string))
+	KillSession(session ID) error
 }
 
 // DefaultRouter is the default WAMP router implementation.
@@ -82,6 +85,7 @@ func (r *defaultRouter) Close() error {
 	return nil
 }
 
+
 func (r *defaultRouter) RegisterRealm(uri URI, realm Realm) error {
 	if _, ok := r.realms[uri]; ok {
 		return RealmExistsError(uri)
@@ -92,9 +96,10 @@ func (r *defaultRouter) RegisterRealm(uri URI, realm Realm) error {
 	return nil
 }
 
-func (r *defaultRouter) Accept(client Peer) error {
+func (r *defaultRouter) Accept(client Peer,  request *http.Request) error {
 	if r.closing {
 		logErr(client.Send(&Abort{Reason: ErrSystemShutdown}))
+		time.Sleep(2000* time.Millisecond)
 		logErr(client.Close())
 		return fmt.Errorf("Router is closing, no new connections are allowed")
 	}
@@ -108,6 +113,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 	hello, ok := msg.(*Hello)
 	if !ok {
 		logErr(client.Send(&Abort{Reason: URI("wamp.error.protocol_violation")}))
+		time.Sleep(2000* time.Millisecond)
 		logErr(client.Close())
 		return fmt.Errorf("protocol violation: expected HELLO, received %s", msg.MessageType())
 	}
@@ -115,9 +121,15 @@ func (r *defaultRouter) Accept(client Peer) error {
 	realm, ok := r.realms[hello.Realm]
 	if !ok {
 		logErr(client.Send(&Abort{Reason: ErrNoSuchRealm}))
+		time.Sleep(2000* time.Millisecond)
 		logErr(client.Close())
 		return NoSuchRealmError(hello.Realm)
 	}
+
+	hello.Details["remote_addr"] = request.RemoteAddr
+	hello.Details["request_uri"] = request.RequestURI
+	hello.Details["host"] = request.Host
+	hello.Details["header"] = request.Header
 
 	welcome, err := realm.handleAuth(client, hello.Details)
 	if err != nil {
@@ -126,6 +138,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 			Details: map[string]interface{}{"error": err.Error()},
 		}
 		logErr(client.Send(abort))
+		time.Sleep(2000* time.Millisecond)
 		logErr(client.Close())
 		return AuthenticationError(err.Error())
 	}
@@ -135,24 +148,41 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if welcome.Details == nil {
 		welcome.Details = make(map[string]interface{})
 	}
+
 	// add default details to welcome message
 	for k, v := range defaultWelcomeDetails {
 		if _, ok := welcome.Details[k]; !ok {
 			welcome.Details[k] = v
 		}
 	}
+
+	// session details
+	welcome.Details["session"] = welcome.Id
+	welcome.Details["realm"] = hello.Realm
+	//log.Println(hello)
+	welcome.Details["authid"] = strings.ToLower(hello.Details["authid"].(string))
+	welcome.Details["authrole"] = "user"
+
+	SessDetails :=  make(map[string]interface{})
+	for ind,val := range welcome.Details {
+		SessDetails[ind] = val
+	}
+
+	SessDetails["remote_addr"] = request.RemoteAddr
+	SessDetails["request_uri"] = request.RequestURI
+	SessDetails["host"] = request.Host
+	SessDetails["header"] = request.Header
+
+
 	if err := client.Send(welcome); err != nil {
 		return err
 	}
 	log.Println("Established session:", welcome.Id)
 
-	// session details
-	welcome.Details["session"] = welcome.Id
-	welcome.Details["realm"] = hello.Realm
 	sess := Session{
 		Peer:    client,
 		Id:      welcome.Id,
-		Details: welcome.Details,
+		Details: SessDetails,
 		kill:    make(chan URI, 1),
 	}
 	for _, callback := range r.sessionOpenCallbacks {
@@ -180,6 +210,19 @@ func (r *defaultRouter) GetLocalPeer(realmURI URI, details map[string]interface{
 
 func (r *defaultRouter) getTestPeer() Peer {
 	peerA, peerB := localPipe()
-	go r.Accept(peerA)
+	go r.Accept(peerA,nil)
 	return peerB
+}
+
+func (r *defaultRouter) KillSession(session ID) error {
+	for _, realm := range r.realms{
+	for _, client := range realm.clients {
+		if (client.Id == session){
+			client.kill <- ErrGoodbyeAndOut
+		}
+
+	}
+	}
+
+	return nil
 }
